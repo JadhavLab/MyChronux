@@ -1,0 +1,167 @@
+function [C,phi,S12,S1,S2,f,confC,phistd,Cerr]=ry_coherencyc(data1,data2,params,usewavelet)
+% Multi-taper coherency,cross-spectrum and individual spectra - continuous process
+%
+% Usage:
+% [C,phi,S12,S1,S2,f,confC,phistd,Cerr]=coherencyc(data1,data2,params)
+% Input: 
+% Note units have to be consistent. See chronux.m for more information.
+%       data1 (in form samples x trials) -- required
+%       data2 (in form samples x trials) -- required
+%       params: structure with fields tapers, pad, Fs, fpass, err, trialave
+%       - optional
+%           tapers : precalculated tapers from dpss or in the one of the following
+%                    forms: 
+%                    (1) A numeric vector [TW K] where TW is the
+%                        time-bandwidth product and K is the number of
+%                        tapers to be used (less than or equal to
+%                        2TW-1). 
+%                    (2) A numeric vector [W T p] where W is the
+%                        bandwidth, T is the duration of the data and p 
+%                        is an integer such that 2TW-p tapers are used. In
+%                        this form there is no default i.e. to specify
+%                        the bandwidth, you have to specify T and p as
+%                        well. Note that the units of W and T have to be
+%                        consistent: if W is in Hz, T must be in seconds
+%                        and vice versa. Note that these units must also
+%                        be consistent with the units of params.Fs: W can
+%                        be in Hz if and only if params.Fs is in Hz.
+%                        The default is to use form 1 with TW=3 and K=5
+%
+%	        pad		    (padding factor for the FFT) - optional (can take values -1,0,1,2...). 
+%                    -1 corresponds to no padding, 0 corresponds to padding
+%                    to the next highest power of 2 etc.
+%			      	 e.g. For N = 500, if PAD = -1, we do not pad; if PAD = 0, we pad the FFT
+%			      	 to 512 points, if pad=1, we pad to 1024 points etc.
+%			      	 Defaults to 0.
+%           Fs   (sampling frequency) - optional. Default 1.
+%           fpass    (frequency band to be used in the calculation in the form
+%                                   [fmin fmax])- optional. 
+%                                   Default all frequencies between 0 and Fs/2
+%           err  (error calculation [1 p] - Theoretical error bars; [2 p] - Jackknife error bars
+%                                   [0 p] or 0 - no error bars) - optional. Default 0.
+%           trialave (average over trials when 1, don't average when 0) - optional. Default 0
+% Output:
+%       C (magnitude of coherency - frequencies x trials if trialave=0; dimension frequencies if trialave=1)
+%       phi (phase of coherency - frequencies x trials if trialave=0; dimension frequencies if trialave=1)
+%       S12 (cross spectrum -  frequencies x trials if trialave=0; dimension frequencies if trialave=1)
+%       S1 (spectrum 1 - frequencies x trials if trialave=0; dimension frequencies if trialave=1)
+%       S2 (spectrum 2 - frequencies x trials if trialave=0; dimension frequencies if trialave=1)
+%       f (frequencies)
+%       confC (confidence level for C at 1-p %) - only for err(1)>=1
+%       phistd - theoretical/jackknife (depending on err(1)=1/err(1)=2) standard deviation for phi. 
+%                Note that phi + 2 phistd and phi - 2 phistd will give 95% confidence
+%                bands for phi - only for err(1)>=1 
+%       Cerr  (Jackknife error bars for C - use only for Jackknife - err(1)=2)
+%
+% Ryan Y -- modified such that can apply 1/f frequency correction to our
+% frequency representations.
+% Ryan Y -- also adding some annotation and spacing between the lines
+% Ryan Y -- adding ability to do log-abs spectrums instead of normal
+%           spectrums, because that seems to match how Muse parses their
+%           eeg.
+%
+% Ryan Y -- Two goals - add phase coherence (ie the PLV analogue) and
+% dual coherence (a tool not used by neuroscience but it should be.)
+% Ryan Y -- adding PLV, ImC, PLI, WPLI
+
+
+if nargin<4
+    usewavelet=false;
+end
+
+%% Handle Inputs
+% Shape data
+if nargin < 2; error('Need data1 and data2'); end
+data1=change_row_to_column(data1);
+data2=change_row_to_column(data2);
+% Derive parameters
+if nargin < 3; params=[]; end
+% Ryan Y -- new parameter option to scale spectra
+if ~isfield(params,'pinkscale'), pinkGamma = []; 
+else, pinkGamma = params.pinkscale; end
+[tapers,pad,Fs,fpass,err,trialave]=getparams(params);
+
+% Parse input error codes
+if nargout > 8 && err(1)~=2 
+    error('Cerr computed only for Jackknife. Correct inputs and run again');
+end
+if nargout > 6 && err(1)==0 
+%   Errors computed only if err(1) is nonzero. Need to change params and run again.
+    error('When errors are desired, err(1) has to be non-zero.');
+end
+
+%% Derive resolution and tapers
+N=check_consistency(data1,data2);
+nfft=max(2^(nextpow2(N)+pad),N);
+[f,findx]=getfgrid(Fs,nfft,fpass); 
+tapers=dpsschk(tapers,N,Fs); % check tapers
+
+%% Compute fourier transforms
+J2=mtfftc(data2,tapers,nfft,Fs,usewavelet);
+if usewavelet
+    [J1,f]=mtfftc(data1,tapers,nfft,Fs,usewavelet);
+    findx = f>=fpass(1) & f<=fpass(2);
+    f = f(findx);
+else
+    J1=mtfftc(data1,tapers,nfft,Fs,usewavelet);
+end
+J1=J1(findx,:,:); J2=J2(findx,:,:);
+
+%% Scale noise
+% Ryan Y - code introduced in this section - this doesn't work yet
+if ~isempty(pinkGamma)
+     scalePinkNoise(f,J1,pinkGamma);
+     scalePinkNoise(f,J2,pinkGamma);
+end
+
+%% Compute spectro cohero measures
+Jxy=conj(J1).*J2;
+S12=squeeze(mean(Jxy,2)); % Mean is across tapers
+S1=squeeze(mean(conj(J1).*J1,2));
+S2=squeeze(mean(conj(J2).*J2,2));
+if trialave; S12=squeeze(mean(S12,2)); S1=squeeze(mean(S1,2)); S2=squeeze(mean(S2,2)); end
+if isfield(params,'logabs') && params.logabs
+    S1 = log(abs(S1)); S2 = log(abs(S2)); S12 = log(abs(S12));
+end
+C12=S12./sqrt(S1.*S2);
+C.C=abs(C12); 
+phi=angle(C12);
+
+%% Add my measures
+% [C.plv, C.pli, C.wpli, C.ImC] = PL.computemeasures(J1,J2,C12);
+
+% Add coherence and imaginary coherence measures
+C.ImC = PL.imc(C12);
+C.plv = PL.plv(Jxy);
+C.wpli = PL.wpli(J1,J2,Jxy);
+%[C.du_C,~] = PL.du_C(J1,J2);
+
+% Add Jxy for plv, wpli (later in the pipeline I can perform the trial averages they seem
+% to require)
+C.Jxy = Jxy;
+
+%% Statistics
+if nargout >=9 
+     [confC,phistd,Cerr]    = coherr(C,J1,J2,err,trialave);
+elseif nargout==8
+     [confC,phistd]         = coherr(C,J1,J2,err,trialave);
+end
+    
+%% Sub function
+    % Ryan Y - code introduced here
+    function J = scalePinkNoise(f, J, gamma)
+        % Using simple frequency method. See Demanuele et al. 2007 for
+        % details ... 
+        %
+        % As with all fourier signals, there are two possible classes of
+        % approach.. to "remove the effect" in the frequency representation
+        % or to filter in the time representation before transoforming to
+        % frequency. The latter is much more difficult, because one needs
+        % to design a filter which dampens 1/f^gamma for any arbitrary
+        % gamma.
+        
+        pinkNoise = 1./(f.^gamma);
+        J = bsxfun(@rdivide,J, pinkNoise');
+    end
+
+end
