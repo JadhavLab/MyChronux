@@ -63,10 +63,12 @@ function [C,phi,S12,S1,S2,t,f,confC,phistd,Cerr]=ry_cohgramc(data1,data2,movingw
 %                Note that phi + 2 phistd and phi - 2 phistd will give 95% confidence
 %                bands for phi - only for err(1)>=1 
 %       Cerr  (Jackknife error bars for C - use only for Jackknife - err(1)=2)
-
+%
+%
 % Ryan -- following code meant to remedy a problem with the chronux library
 % -- it doesn't play nice with non-double types
-
+%
+%
 % Ryan -- Adding phase-locking value, imaginary coherence, phase locking
 % index and weighted phase locking index.
 
@@ -80,7 +82,7 @@ if ~isempty(params) && length(params.tapers)==3 && movingwin(1)~=params.tapers(2
     error('Duration of data in params.tapers is inconsistent with movingwin(1), modify params.tapers(2) to proceed')
 end
 
-[tapers,pad,Fs,fpass,err,trialave,params]=getparams(params);
+[tapers,pad,Fs,fpass,err,trialave,params] = getparams(params);
 if ~isfield(params,'usewavelet')
     params.usewavelet=false;
 end
@@ -109,6 +111,7 @@ winstart=1:Nstep:N-Nwin+1;
 nw=length(winstart);
 
 % Iterate over each window and compute the measure
+prog = floor(nw/20);
 for n=1:nw
    indx=winstart(n):winstart(n)+Nwin-1;
    datawin1=data1(indx,:);datawin2=data2(indx,:);
@@ -120,17 +123,23 @@ for n=1:nw
      Cerr(1,n,:,:)=squeeze(cerr(1,:,:));
      Cerr(2,n,:,:)=squeeze(cerr(2,:,:));
    elseif nargout==9
-     [c,ph,s12,s1,s2,f,confc,phie]=ry_coherencyc(datawin1,datawin2,params,params.usewavelet);
+     [c,ph,s12,s1,s2,f,confc,phie] = ry_coherencyc(datawin1,datawin2,params,params.usewavelet);
 %      phierr(1,n,:,:)=squeeze(phie(1,:,:));
 %      phierr(2,n,:,:)=squeeze(phie(2,:,:));
       phistd(n,:,:)=phie;
    else
-     [c,ph,s12,s1,s2,f]=ry_coherencyc(datawin1,datawin2,params,params.usewavelet);
+     [c,ph,s12,s1,s2,f] = ry_coherencyc(datawin1,datawin2,params,params.usewavelet);
    end
    
-   if n==1; initialize(); end
+   if n==1; 
+    initialize(); 
+    fprintf('<');
+    else
+   assert(n <= size(C.(fd),1))
+   end
+
    
-   for fd = fieldnames(C)'
+   for fd = fieldnames(c)'
     fd=fd{1};
     C.(fd)(n,:,:,:)=c.(fd);
    end
@@ -138,7 +147,13 @@ for n=1:nw
    S1(n,:,:)=s1;
    S2(n,:,:)=s2;
    phi(n,:,:)=ph;
+   
+    if mod(n,prog)==0
+        fprintf('=');
+    end
+
 end
+fprintf('>');
 
 %Squeeze out singleton dimensions
 for fd = fieldnames(C)'
@@ -159,39 +174,51 @@ t=winmid/Fs;
 
 function initialize()
   % Initialize the objects that will hold the computations
+  if isa(data1,'gpuArray')
+      kwargs = {'single','gpuArray'};
+      gpu_flag = true;
+  else
+      kwargs = {'single'};
+      gpu_flag = false;
+  end
   if trialave
-     for fd = fieldnames(c); fd=fd{1};
-       if strcmp(fd(1:2),'du')
-        C.(fd)=zeros(nw,Nf,Nf);
+     for fd = fieldnames(c)'; fd=fd{1};
+       if numel(fd) > 2 &&  (strcmp(fd(1:2),'du') || strcmp(fd(1:2),'nm'))
+        C.(fd)=single(zeros(nw,Nf,Nf, kwargs{:}));
        else
-        C.(fd)=zeros(nw,Nf);
+        C.(fd)=single(zeros(nw,Nf, kwargs{:}));
        end
      end
-     S12=zeros(nw,Nf);
-     S1=zeros(nw,Nf);
-     S2=zeros(nw,Nf);
-     phi=zeros(nw,Nf);
-     Cerr=zeros(2,nw,Nf);
+     S12=single(zeros(nw,Nf, kwargs{:}));
+     S1=single(zeros(nw,Nf, kwargs{:}));
+     S2=single(zeros(nw,Nf, kwargs{:}));
+     phi=single(zeros(nw,Nf, kwargs{:}));
+     Cerr=single(zeros(2,nw,Nf, kwargs{:}));
   %    phierr=zeros(2,nw,Nf);
-     phistd=zeros(nw,Nf);
+     phistd=single(zeros(nw,Nf, kwargs{:}));
   else
     for fd = fieldnames(c)'; fd=fd{1};
      if strcmp(fd,'Jxy') 
-      C.(fd)=zeros(nw,Nf,size(params.tapers,2));
+      C.(fd)=single(zeros(nw,Nf,size(params.tapers,2), kwargs{:}));
      elseif numel(fd)>2 && all(fd(1:2)=='du')
-      C.(fd)=zeros(nw,Nf,Nf,Ch);
+      C.(fd)=single(zeros(nw,Nf,Nf,Ch, kwargs{:}));
      else
-      C.(fd)=zeros(nw,Nf,Ch,1);
+      C.(fd)=single(zeros(nw,Nf,Ch,1, kwargs{:}));
      end
     end
-     S12=zeros(nw,Nf,Ch);
-     S1=zeros(nw,Nf,Ch);
-     S2=zeros(nw,Nf,Ch);
-     phi=zeros(nw,Nf,Ch);
-     Cerr=zeros(2,nw,Nf,Ch);
+     S12=single(zeros(nw,Nf,Ch, kwargs{:}));
+     S1=single(zeros(nw,Nf,Ch, kwargs{:}));
+     S2=single(zeros(nw,Nf,Ch, kwargs{:}));
+     phi=single(zeros(nw,Nf,Ch, kwargs{:}));
+     Cerr=single(zeros(2,nw,Nf,Ch, kwargs{:}));
   %    phierr=zeros(2,nw,Nf,Ch);
-     phistd=zeros(nw,Nf,Ch);
+     phistd=single(zeros(nw,Nf,Ch, kwargs{:}));
+
   end
+  if gpu_flag
+         gpu = gpuDevice;
+         fprintf('\n%2.2f percent gpu usage with %d trials\n',100-100*gpu.AvailableMemory/gpu.TotalMemory, size(data1,2))
+ end
 end
 
 end

@@ -64,7 +64,7 @@ function [C,phi,S12,S1,S2,f,confC,phistd,Cerr]=ry_coherencyc(data1,data2,params,
 % dual coherence (a tool not used by neuroscience but it should be.)
 % Ryan Y -- adding PLV, ImC, PLI, WPLI
 
-
+debug=false;
 if nargin<4
     usewavelet=false;
 end
@@ -91,8 +91,8 @@ if nargout > 6 && err(1)==0
 end
 
 %% Derive resolution and tapers
-N=check_consistency(data1,data2);
-nfft=max(2^(nextpow2(N)+pad),N);
+N    = check_consistency(data1,data2);
+nfft = max(2^(nextpow2(N)+pad),N);
 [f,findx]=getfgrid(Fs,nfft,fpass); 
 tapers=dpsschk(tapers,N,Fs); % check tapers
 
@@ -123,22 +123,48 @@ if trialave; S12=squeeze(mean(S12,2)); S1=squeeze(mean(S1,2)); S2=squeeze(mean(S
 if isfield(params,'logabs') && params.logabs
     S1 = log(abs(S1)); S2 = log(abs(S2)); S12 = log(abs(S12));
 end
-C12=S12./sqrt(S1.*S2);
-C.C=abs(C12); 
+%C = struct('C',zeros(size(S1)),'wpli',zeros(size(S1)),...
+%    'nm12',zeros(size(J1,1),size(J2,1)),...
+%    'nm13',zeros(size(J1,1),size(J2,1)),...
+%    'nm15',size(size(J1,1),size(J2,1))...
+%    );
+if isfield(params,'C')
+    C12=S12./sqrt(S1.*S2);
+    C.C=abs(C12); 
+end
 phi=angle(C12);
 
 %% Add my measures
 % [C.plv, C.pli, C.wpli, C.ImC] = PL.computemeasures(J1,J2,C12);
 
 % Add coherence and imaginary coherence measures
-C.ImC = PL.imc(C12);
-C.plv = PL.plv(Jxy);
-C.wpli = PL.wpli(J1,J2,Jxy);
-%[C.du_C,~] = PL.du_C(J1,J2);
+if isfield(params,'ImC')
+    C.ImC  = PL.imc(C12);
+end
+if isfield(params,'plv')
+    C.plv  = PL.plv(Jxy);
+end
+if isfield(params,'wpli')
+    if trialave
+        C.wpli = squeeze(mean(PL.wpli(J1,J2,Jxy),3));
+    else
+        C.wpli = PL.wpli(J1,J2,Jxy);
+    end
+end
+%if isfield(params,'nm')
+%    C.nm12      = phasephase(J1, J2, 1, 2);
+%    C.nm13      = phasephase(J1, J2, 1, 3);
+%    C.nm15      = phasephase(J1, J2, 1, 5);
+%end
+%[C.du_C] = PL.du_C(J1,J2,'S1',S1,'S2',S2);
+if debug
+  keyboard;
+  DemonstrateSpectralDifference;
+end
 
 % Add Jxy for plv, wpli (later in the pipeline I can perform the trial averages they seem
 % to require)
-C.Jxy = Jxy;
+%C.Jxy = Jxy;
 
 %% Statistics
 if nargout >=9 
@@ -162,6 +188,22 @@ end
         
         pinkNoise = 1./(f.^gamma);
         J = bsxfun(@rdivide,J, pinkNoise');
+    end
+  
+  function [out] = phasephase(J1, J2, n, m)
+    %PHASEPHASE Description
+    %	[OUT] = PHASEPHASE(J1, J2, n, m) implements measurement of n:m
+    %	phase-phase coupling
+      A = permute( mean(J1,2) , [1 2 3]);
+      B = permute( mean(J2,2) , [2 1 3]);
+      A = (A./abs(A)).^n;
+      B = (B./abs(B)).^m;
+      out = bsxfun(@minus, A, B);
+      if trialave
+          out = abs(mean(out,3));
+      else
+          out = abs(out);
+      end
     end
 
 end

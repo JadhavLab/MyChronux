@@ -75,7 +75,7 @@ classdef PL
     % much deeper to be sure I've got it.
     
       dim = 2;
-      func=@nansum;
+      func=@sum;
       debias = true;
       optlistassign(who,varargin{:});
       
@@ -86,6 +86,7 @@ classdef PL
       
       J = imag(J12);
       a = abs(func(J,dim));
+      J(isnan(J))=0;
       b = func(abs(J),dim);
       if debias
        c = func(J.^2,dim);
@@ -204,8 +205,30 @@ classdef PL
       % So now we have to sqrt
       %	du_wpli = sqrt(abs(du_wpli));
     end
-    
+    % --------------------------------------------------------------------
+    function [out] = phasephase(J1, J2, n, m)
+    %PHASEPHASE Description
+    %	[OUT] = PHASEPHASE(J1, J2, n, m) implements measurement of n:m
+    %	phase-phase coupling
+      J1 = permute(J1, [1 4 2 3]);
+      J2 = permute(J2, [4 1 2 3]);
+      out = bsxfun(@minus, J1, J2);
+      out = out./abs(out);
+      out = squeeze(mean(out,3));
+    end
+    % --------------------------------------------------------------------
+    function [inStruct] = battery_of_nm_coupling(inStruct, J1, J2)
+    %BATTERY_OF_NM_COUPLING Runs a sequence of nm phase coupling measures
+    %	[OUTSTRUCT] = BATTERY_OF_NM_COUPLING(INSTRUCT, J1, J2) 
+    %	Runs a sequence of nm phase coupling measures and adds each of them to the
+    %	inStruct.
+        NM = [1,2; 1,3; 1, 5 ];
+        for nm = NM'
+            inStruct.(sprintf('nm%d%dpc',nm(1),nm(2))) = PL.phasephase(J1,J2,nm(1),nm(2));
+        end
   end
+%  -------------------------------------------------------------------
 
+end
 end
 
