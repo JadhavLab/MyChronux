@@ -20,7 +20,7 @@ if t(1) < 0 || t(2)<=t(1);
     error('times cannot be negative and t(2) has to greater than t(1)');
 end;
 if nargin < 3 || isempty(offset); offset=0; end;
-if isstruct(data); 
+if isstruct(data)
     C=length(data);
 elseif min(size(data))~=1; 
     error('Can only accept single vector data unless it is a struct array'); 
@@ -33,7 +33,7 @@ d2(1:C)=struct('times',[]);
 for c=1:C,
     if isstruct(data)
        fnames=fieldnames(data);
-       eval(['dtmp=data(c).' fnames{1} ';'])
+       dtmp=data(c).(fnames{1});
     else
        dtmp=data(:);
     end

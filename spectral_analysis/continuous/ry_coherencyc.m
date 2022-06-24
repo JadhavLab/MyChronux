@@ -115,11 +115,13 @@ if ~isempty(pinkGamma)
 end
 
 %% Compute spectro cohero measures
-Jxy=conj(J1).*J2;
-S12=squeeze(mean(Jxy,2)); % Mean is across tapers
-S1=squeeze(mean(conj(J1).*J1,2));
-S2=squeeze(mean(conj(J2).*J2,2));
-if trialave; S12=squeeze(mean(S12,2)); S1=squeeze(mean(S1,2)); S2=squeeze(mean(S2,2)); end
+Jxy = conj(J1).*J2;
+S12 = squeeze(mean(Jxy,2)); % Mean is across tapers
+S1  = squeeze(mean(conj(J1).*J1,2));
+S2  = squeeze(mean(conj(J2).*J2,2));
+if trialave && ~isfield(params,'trialaveC') % regular trial average averages the cross and auto spectra before computing coherence
+    S12=squeeze(mean(S12,2)); S1=squeeze(mean(S1,2)); S2=squeeze(mean(S2,2)); % mean over trials!
+end
 if isfield(params,'logabs') && params.logabs
     S1 = log(abs(S1)); S2 = log(abs(S2)); S12 = log(abs(S12));
 end
@@ -128,14 +130,26 @@ end
 %    'nm13',zeros(size(J1,1),size(J2,1)),...
 %    'nm15',size(size(J1,1),size(J2,1))...
 %    );
-if isfield(params,'C')
-    C12=S12./sqrt(S1.*S2);
-    C.C=abs(C12); 
+if isfield(params,'C') && ~isfield(params,'trialaveC')
+    C12 = S12./sqrt(S1.*S2);
+    C.C = abs(C12);
+elseif isfield(params,'trialaveC')                      % average trials of coherence instead of at the spectral stage
+    core   = S12./sqrt(S1.*S2);                         % coherency computed on unaveraged cross-spectra and auto-spectra
+    C12    = squeeze(mean(core,2));                     % mean over trials/channels final coherency values
+    %C.Calt = abs(C12);
+    C.Calt    = squeeze(mean(abs(core),2));
+    
+    % And this is the standard way that chronux already performs this
+    S12 = squeeze(mean(S12,2)); S1 = squeeze(mean(S1,2));S2 = squeeze(mean(S2,2)); %mean over trials
+    C.C = abs(S12./sqrt(S1.*S2));
 end
 phi=angle(C12);
 
 %% Add my measures
 % [C.plv, C.pli, C.wpli, C.ImC] = PL.computemeasures(J1,J2,C12);
+
+C.wpli = PL.wpli(J1,J2,Jxy);
+
 
 % Add coherence and imaginary coherence measures
 if isfield(params,'ImC')

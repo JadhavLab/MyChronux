@@ -1,4 +1,4 @@
-function [C,phi,S12,S1,S2,f,confC,phistd,Cerr]=coherencyc(data1,data2,params)
+function [C,phi,S12,S1,S2,f,confC,phistd,Cerr]=coherencyc(data1,data2,params,usewavelet)
 % Multi-taper coherency,cross-spectrum and individual spectra - continuous process
 %
 % Usage:
@@ -52,12 +52,34 @@ function [C,phi,S12,S1,S2,f,confC,phistd,Cerr]=coherencyc(data1,data2,params)
 %                Note that phi + 2 phistd and phi - 2 phistd will give 95% confidence
 %                bands for phi - only for err(1)>=1 
 %       Cerr  (Jackknife error bars for C - use only for Jackknife - err(1)=2)
+%
+% Ryan Y -- modified such that can apply 1/f frequency correction to our
+% frequency representations.
+% Ryan Y -- also adding some annotation and spacing between the lines
+% Ryan Y -- adding ability to do log-abs spectrums instead of normal
+%           spectrums, because that seems to match how Muse parses their
+%           eeg.
+%
+% Ryan Y -- Two goals - add phase coherence (ie the PLC analogue) and
+% double coherence (a tool not used by neuroscience but it should be.)
 
+if nargin<4
+    usewavelet=false;
+end
+
+%% Handle Inputs
+% Shape data
 if nargin < 2; error('Need data1 and data2'); end;
 data1=change_row_to_column(data1);
 data2=change_row_to_column(data2);
+% Derive parameters
 if nargin < 3; params=[]; end;
+% Ryan Y -- new parameter option to scale spectra
+if ~isfield(params,'pinkscale'), pinkGamma = []; 
+else, pinkGamma = params.pinkscale; end
 [tapers,pad,Fs,fpass,err,trialave]=getparams(params);
+
+% Parse input error codes
 if nargout > 8 && err(1)~=2; 
     error('Cerr computed only for Jackknife. Correct inputs and run again');
 end;
@@ -65,22 +87,65 @@ if nargout > 6 && err(1)==0;
 %   Errors computed only if err(1) is nonzero. Need to change params and run again.
     error('When errors are desired, err(1) has to be non-zero.');
 end;
+
+%% Derive resolution and tapers
 N=check_consistency(data1,data2);
 nfft=max(2^(nextpow2(N)+pad),N);
 [f,findx]=getfgrid(Fs,nfft,fpass); 
 tapers=dpsschk(tapers,N,Fs); % check tapers
-J1=mtfftc(data1,tapers,nfft,Fs);
-J2=mtfftc(data2,tapers,nfft,Fs);
+
+%% Compute fourier transforms
+J2=mtfftc(data2,tapers,nfft,Fs,usewavelet);
+if usewavelet
+    [J1,f]=mtfftc(data1,tapers,nfft,Fs,usewavelet);
+    findx = f>=fpass(1) & f<=fpass(2);
+    f = f(findx);
+else
+    J1=mtfftc(data1,tapers,nfft,Fs,usewavelet);
+end
 J1=J1(findx,:,:); J2=J2(findx,:,:);
-S12=squeeze(mean(conj(J1).*J2,2));
+
+%% Scale noise
+% Ryan Y - code introduced in this section.
+if ~isempty(pinkGamma)
+     scalePinkNoise(f,J1,pinkGamma);
+     scalePinkNoise(f,J2,pinkGamma);
+end
+
+%% Compute spectro cohero measures
+S12=squeeze(mean(conj(J1).*J2,2)); % Mean is across tapers
 S1=squeeze(mean(conj(J1).*J1,2));
 S2=squeeze(mean(conj(J2).*J2,2));
 if trialave; S12=squeeze(mean(S12,2)); S1=squeeze(mean(S1,2)); S2=squeeze(mean(S2,2)); end;
+if isfield(params,'logabs') && params.logabs
+    S1 = log(abs(S1)); S2 = log(abs(S2)); S12 = log(abs(S12));
+end
 C12=S12./sqrt(S1.*S2);
 C=abs(C12); 
 phi=angle(C12);
-if nargout>=9; 
-     [confC,phistd,Cerr]=coherr(C,J1,J2,err,trialave);
+
+%% Statistics
+if nargout >=9 ; 
+     [confC,phistd,Cerr]    = coherr(C,J1,J2,err,trialave);
 elseif nargout==8;
-     [confC,phistd]=coherr(C,J1,J2,err,trialave);
+     [confC,phistd]         = coherr(C,J1,J2,err,trialave);
 end;
+    
+%% Sub function
+    % Ryan Y - code introduced here
+    function J = scalePinkNoise(f, J, gamma)
+        % Using simple frequency method. See Demanuele et al. 2007 for
+        % details ... 
+        %
+        % As with all fourier signals, there are two possible classes of
+        % approach.. to "remove the effect" in the frequency representation
+        % or to filter in the time representation before transoforming to
+        % frequency. The latter is much more difficult, because one needs
+        % to design a filter which dampens 1/f^gamma for any arbitrary
+        % gamma.
+        
+        pinkNoise = 1./(f.^gamma);
+        J = bsxfun(@rdivide,J, pinkNoise');
+    end
+
+end

@@ -64,22 +64,30 @@ function [C,phi,S12,S1,S2,t,f,confC,phistd,Cerr]=cohgramc(data1,data2,movingwin,
 %                bands for phi - only for err(1)>=1 
 %       Cerr  (Jackknife error bars for C - use only for Jackknife - err(1)=2)
 
+% Ryan -- following code meant to remedy a problem with the chronux library
+% -- it doesn't play nice with non-double types
+movingwin = cast(movingwin, 'double');
+params.Fs = cast(params.Fs, 'double');
+
 if nargin < 3; error('Need data1 and data2 and window parameters'); end;
-if nargin < 4; params=[];end;
+if nargin < 4; params=[];end
 
 if ~isempty(params) && length(params.tapers)==3 && movingwin(1)~=params.tapers(2);
     error('Duration of data in params.tapers is inconsistent with movingwin(1), modify params.tapers(2) to proceed')
 end
 
 [tapers,pad,Fs,fpass,err,trialave,params]=getparams(params);
+if ~isfield(params,'usewavelet')
+    params.usewavelet=false;
+end
 
-if nargout > 9 && err(1)~=2; 
+if nargout > 9 && err(1)~=2
     error('Cerr computed only for Jackknife. Correct inputs and run again');
-end;
-if nargout > 7 && err(1)==0;
+end
+if nargout > 7 && err(1)==0
 %   Errors computed only if err(1) is nonzero. Need to change params and run again.
     error('When errors are desired, err(1) has to be non-zero.');
-end;
+end
 [N,Ch]=check_consistency(data1,data2);
 
 Nwin=round(Fs*movingwin(1)); % number of samples in window
@@ -91,7 +99,7 @@ params.tapers=dpsschk(tapers,Nwin,Fs); % check tapers
 
 winstart=1:Nstep:N-Nwin+1;
 nw=length(winstart);
-if trialave;
+if trialave
    C=zeros(nw,Nf);
    S12=zeros(nw,Nf);
    S1=zeros(nw,Nf);
@@ -109,35 +117,35 @@ else
    Cerr=zeros(2,nw,Nf,Ch);
 %    phierr=zeros(2,nw,Nf,Ch);
    phistd=zeros(nw,Nf,Ch);
-end;
+end
 
-for n=1:nw;
+for n=1:nw
    indx=winstart(n):winstart(n)+Nwin-1;
    datawin1=data1(indx,:);datawin2=data2(indx,:);
-   if nargout==10;
-     [c,ph,s12,s1,s2,f,confc,phie,cerr]=coherencyc(datawin1,datawin2,params);
+   if nargout==10
+     [c,ph,s12,s1,s2,f,confc,phie,cerr]=coherencyc(datawin1,datawin2,params,params.usewavelet);
 %      phierr(1,n,:,:)=squeeze(phie(1,:,:));
 %      phierr(2,n,:,:)=squeeze(phie(2,:,:));
      phistd(n,:,:)=phie;
      Cerr(1,n,:,:)=squeeze(cerr(1,:,:));
      Cerr(2,n,:,:)=squeeze(cerr(2,:,:));
-   elseif nargout==9;
-     [c,ph,s12,s1,s2,f,confc,phie]=coherencyc(datawin1,datawin2,params);
+   elseif nargout==9
+     [c,ph,s12,s1,s2,f,confc,phie]=coherencyc(datawin1,datawin2,params,params.usewavelet);
 %      phierr(1,n,:,:)=squeeze(phie(1,:,:));
 %      phierr(2,n,:,:)=squeeze(phie(2,:,:));
       phistd(n,:,:)=phie;
    else
-     [c,ph,s12,s1,s2,f]=coherencyc(datawin1,datawin2,params);
-   end;
+     [c,ph,s12,s1,s2,f]=coherencyc(datawin1,datawin2,params,params.usewavelet);
+   end
    C(n,:,:)=c;
    S12(n,:,:)=s12;
    S1(n,:,:)=s1;
    S2(n,:,:)=s2;
    phi(n,:,:)=ph;
-end;
+end
 C=squeeze(C); phi=squeeze(phi);S12=squeeze(S12); S1=squeeze(S1); S2=squeeze(S2);
-if nargout > 8; confC=confc; end;
-if nargout==10;Cerr=squeeze(Cerr);end;
+if nargout > 8; confC=confc; end
+if nargout==10;Cerr=squeeze(Cerr);end
 % if nargout>=9; phierr=squeeze(phierr);end
 if nargout>=9; phistd=squeeze(phistd);end
 winmid=winstart+round(Nwin/2);

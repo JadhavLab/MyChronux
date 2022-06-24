@@ -103,7 +103,11 @@ if errchk==1;
 elseif errchk==2;
     tcrit=tinv(pp,dof-1);
     for k=1:dim; % dim is the number of 'independent' estimates
-        indxk=setdiff(1:dim,k);
+        %if exist('my_setdiff.m','file')
+            indxk=my_setdiff(1:dim,k); % ry speed improvement
+        %else
+        %    indxk=setdiff(1:dim,k);
+        %end
         J1k=J1(:,indxk,:);
         J2k=J2(:,indxk,:);
         eJ1k=squeeze(sum(J1k.*conj(J1k),2));
@@ -121,7 +125,7 @@ elseif errchk==2;
 %         eJ12jk=squeeze(sum(conj(J1jk).*J2jk,2)); 
 %         atanhCxyjk(k,:,:)=sqrt(2*dim-2)*atanh(abs(eJ12jk)./sqrt(eJ1jk.*eJ2jk));
     end; 
-    atanhC=sqrt(2*dim-2)*atanh(C); % z
+    atanhC=sqrt(2*dim-2)*atanh(C.C); % z
     sigma12=sqrt(dim-1)*squeeze(std(atanhCxyk,1,1)); % Jackknife estimate std(z)=sqrt(dim-1)*std of 1-drop estimates
 %     sigma12=sqrt(dim-1)*squeeze(std(atanhCxyjk,1,1));
     if Ch==1; sigma12=sigma12'; end;

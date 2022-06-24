@@ -115,8 +115,17 @@ prog = floor(nw/20);
 for n=1:nw
    indx=winstart(n):winstart(n)+Nwin-1;
    datawin1=data1(indx,:);datawin2=data2(indx,:);
+
+   
+
    if nargout==10
      [c,ph,s12,s1,s2,f,confc,phie,cerr]=ry_coherencyc(datawin1,datawin2,params,params.usewavelet);
+     if n==1; 
+       initialize(); 
+       fprintf('<');
+     else
+       assert(n <= size(C.(fd),1))
+     end
 %      phierr(1,n,:,:)=squeeze(phie(1,:,:));
 %      phierr(2,n,:,:)=squeeze(phie(2,:,:));
      phistd(n,:,:)=phie;
@@ -129,19 +138,19 @@ for n=1:nw
       phistd(n,:,:)=phie;
    else
      [c,ph,s12,s1,s2,f] = ry_coherencyc(datawin1,datawin2,params,params.usewavelet);
+      if n==1; 
+       initialize(); 
+       fprintf('<');
+      else
+       assert(n <= size(C.(fd),1))
+     end
    end
    
-   if n==1; 
-    initialize(); 
-    fprintf('<');
-    else
-   assert(n <= size(C.(fd),1))
-   end
 
    
    for fd = fieldnames(c)'
     fd=fd{1};
-    C.(fd)(n,:,:,:)=c.(fd);
+    C.(fd)(n,:,:,:) = c.(fd);
    end
    S12(n,:,:)=s12;
    S1(n,:,:)=s1;
@@ -153,7 +162,7 @@ for n=1:nw
     end
 
 end
-fprintf('>');
+fprintf('>\n');
 
 %Squeeze out singleton dimensions
 for fd = fieldnames(C)'
@@ -217,7 +226,7 @@ function initialize()
   end
   if gpu_flag
          gpu = gpuDevice;
-         fprintf('\n%2.2f percent gpu usage with %d trials\n',100-100*gpu.AvailableMemory/gpu.TotalMemory, size(data1,2))
+         fprintf('\n%2.2f percent gpu usage with %d trials or channels\n',100-100*gpu.AvailableMemory/gpu.TotalMemory, size(data1,2))
  end
 end
 

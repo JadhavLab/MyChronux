@@ -1,4 +1,4 @@
-function [C,phi,S12,S1,S2,f,zerosp,confC,phistd,Cerr]=coherencycpt(data1,data2,params,fscorr,t)
+function [C, phi, S12, S1, S2, f, zerosp, confC, phistd, Cerr] = coherencycpt(data1, data2, params, fscorr, t)
 % Multi-taper coherency,cross-spectrum and individual spectra -continuous data and point process as times
 %
 % Usage:
